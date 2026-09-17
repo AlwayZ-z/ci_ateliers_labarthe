@@ -18,6 +18,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache des dependances pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-lint-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-lint-${{ runner.os }}-
+
       - name: Installer les dependances
         run: |
           python -m pip install --upgrade pip
@@ -42,13 +50,29 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Afficher la version utilisee
+        run: python --version
+
+      - name: Cache des dependances pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-test-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            pip-test-${{ runner.os }}-${{ matrix.python-version }}-
+
       - name: Installer les dependances
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Afficher la version utilisee
-        run: python --version
+      - name: Lancer les tests avec couverture
+        run: pytest -v --cov=. --cov-report=term --cov-report=html
 
-      - name: Lancer les tests
-        run: pytest -v
+      - name: Conserver le rapport de couverture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-${{ matrix.python-version }}
+          path: htmlcov/
+          retention-days: 7
