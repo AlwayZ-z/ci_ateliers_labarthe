@@ -31,3 +31,66 @@ pip install -r requirements.txt
 flake8 .
 pytest -v
 ```
+## Conteneurisation Docker (séance 3)
+
+### Construire l'image
+
+```bash
+docker build -t app-slim:1.0 .
+```
+
+Le `Dockerfile` est un multi-stage. Un stage `builder`, basé sur `python:3.12`, installe les
+dépendances dans `/install`. Le stage final, basé sur `python:3.12-slim`, ne récupère que ce
+dossier via `COPY --from=builder` : l'image livrée ne contient donc ni cache pip, ni outils de
+build. Le serveur est `gunicorn` (2 workers), pas le serveur de développement Flask.
+
+Le conteneur tourne sous l'utilisateur non privilégié `appuser` :
+
+```bash
+docker run --rm app-slim:1.0 whoami   # appuser
+```
+
+Un `.dockerignore` limite le contexte de build : il est passé de plusieurs mégaoctets à 2,67 ko.
+
+### Gain de taille mesuré
+
+| Image | Dockerfile | Taille disque | Taille de contenu |
+|---|---|---|---|
+| `app-naive:1.0` | `Dockerfile.naive` — mono-stage, `python:3.12` | 1,64 Go | 423 Mo |
+| `app-slim:1.0` | `Dockerfile` — multi-stage, `python:3.12-slim` | 212 Mo | 51,3 Mo |
+
+Soit un facteur **8,2** sur la taille de contenu. Mesuré avec `docker images` après
+reconstruction des deux images. `docker history` montre que l'écart vient presque entièrement
+de l'image de base : les couches applicatives ne pèsent que 33,4 Mo.
+
+### Lancer la stack complète
+
+```bash
+docker compose up -d --build
+```
+
+Deux services sur le réseau dédié `appnet` : `web` (cette image) et `redis` (`redis:7-alpine`).
+Les données Redis vivent dans le volume nommé `redis-data` avec l'append-only activé, ce qui
+fait survivre le compteur de `/visits` à un redémarrage du conteneur `web`. Le service `web`
+ne démarre qu'une fois Redis réellement prêt (`depends_on` avec `condition: service_healthy`),
+et son `HEALTHCHECK` interroge `/health` en Python — pas en `curl`, absent de l'image slim.
+
+```bash
+docker compose ps   # les deux services passent à (healthy) après quelques secondes
+```
+
+### Endpoints
+
+- `GET /health` — état du service
+- `GET /status` — nom et version
+- `GET /visits` — compteur de visites, persistant dans Redis
+
+### Image publiée
+
+`ghcr.io/alwayz-z/ci-ateliers-labarthe-web`, taguée `1.0.0` et `latest`.
+
+```bash
+docker pull ghcr.io/alwayz-z/ci-ateliers-labarthe-web:1.0.0
+```
+
+Le package est public : le `pull` fonctionne sans authentification.

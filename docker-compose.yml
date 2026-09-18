@@ -1,0 +1,34 @@
+services:
+  web:
+    build: .
+    image: ci-ateliers-labarthe-web:1.0.0
+    ports:
+      - "5000:5000"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - appnet
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - appnet
+
+volumes:
+  redis-data:
+
+networks:
+  appnet:
+    driver: bridge
